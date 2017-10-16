@@ -1,5 +1,5 @@
 # HDBSCAN
-A MATLAB implementation of the Hierarchical Density-based Clustering for Applications with Noise, ([HDBSCAN])(http://joss.theoj.org/papers/b5c5dd4b7491890b711c06225dcc9649), clustering algorithm. 
+A MATLAB implementation of the Hierarchical Density-based Clustering for Applications with Noise, ([HDBSCAN](http://joss.theoj.org/papers/b5c5dd4b7491890b711c06225dcc9649)), clustering algorithm. 
 
 The HDBSCAN algorithm creates a nested hierarchy of density-based clusters, discovered in a non-parametric way from the input data. The hierarchies are akin to Single Linkage Clustering, however 
 in HDBSCAN, an optimal clustering scheme is automatically inferred from the cluster hierarchy. The optimal clustering is analogous to a single run of the DBSCAN algorithm, but with possibly varying 
