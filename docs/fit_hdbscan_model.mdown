@@ -1,0 +1,45 @@
+# Fitting a hierarchical model
+
+HDBSCAN fits a hierarchical cluster model for each uinque set of input points and parameters. The input points should be oriented as a vector or matrix, with columns equal to the number of dimensions, and rows equal to the number of observations (points). To initiate an HDBSCAN instance, one needs to provide input points:
+
+``` matlab
+% Assume our data is in the n x m matrix "X". We will initiate a new HDBSCAN instance
+clusterer = HDBSCAN( X ); 
+
+% we can view our data matrix size
+fprintf( 'Number of points: %i',clusterer.nPoints );
+disp( 'Number of dimensions: %i',clusterer.nDims );
+```
+
+now that we've created an instance of the HDBSCAN cluster object, we can fit a cluster hierarchy to X. The clusterer is automatically created with default parameters `self.minpts`, `self.minclustsize`, and `self.outlierThresh`. These parameters control the following:
+`minpts`: indicates which nearest neighbor to use for calculating the core-distances of each point in X. Core distances are exactly the euclidean distance to the *minpts*-nearest neighbor. 
+`minclustsize`: a smoothing parameter that limits the minimium size of any potential cluster. The larger the *minclustsize* when training, the fewer but potentially larger clusters there will be. This helps eliminate "spurious" clusters produced by the splitting of outliers. 
+`outlierThresh`: a value between 0 and 1 used to evaluate each point as a potential outlier. A value of 0 would result in all points assigned as outliers, while a value of 1 would result in no points assigned as outliers. 
+
+We can set these parameters as follows:
+``` matlab
+% (1) directly set the parameters
+clusterer.minpts = 10;
+clusterer.minclustsize = 20;
+clusterer.outlierThresh = 0.85;
+clusterer.fit_model(); 			% trains a cluster hierarchy
+clusterer.get_best_clusters(); 	% finds the optimal "flat" clustering scheme
+clusterer.get_membership();		% assigns cluster labels to the points in X
+
+% (2) call run_hdbscan() with optional inputs. This is the prefered/easier method
+clusterer.run_hdbscan( 10,20,[],0.85 ); 
+```
+
+You may have noticed that when I called `clusterer.run_hdbscan()`, I provided *four* optional inputs, but left the third empty (which defaults to a preset value). The third optional input in `run_hdbscan()` is called `dEps`, a parameter that controls the speed of the training procedure. This parameter controls how many iterations to skip via setting the iterator range as `startingIteration:dEps:endingIteration`. Thus, excluding the runtime overhead before the algorithm reaches the loop, the value of `dEps` is linearly associated with overall runtime speed. However, too large of a value for `dEps` may result in a non-optimal cluster hierarchy, as information at each iteration becomes courser and more points may be lumped together or split simultaneously with large values for `dEps`. The default value is 1, and a safe range tends to be [1,6].
+
+Once we've fit our hierarchy, we can visualize the results in two ways.
+``` matlab
+% Let's visualize the condensed cluster tree (the tree without spurious clusters)
+clusterer.plot_tree();
+
+% we can also visualize the actual clusters in a 2D or 3D space (depending on self.nDims)
+clusterer.plot_clusters(); % plots a scatter of the points, color coded by the associated labels
+clusterer.plot_clusters( [1,4,5] ); % specifies the scatter to use the 1st, 4th, and 5th columns of X
+```
+
+After fitting the cluster hierarchy, the properties in the HDBSCAN object will be automatically populated. Take a look at the detailed comments in *HDBSCAN.m* and *hdbscan_fit.m* to better understand the results from the fit. 

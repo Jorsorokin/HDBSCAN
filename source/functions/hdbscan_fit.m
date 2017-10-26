@@ -95,7 +95,7 @@ function model = hdbscan_fit( X,varargin )
     weights = mst.Edges.Weight;
     
     % (c) get sorted weight vector for the loop
-    epsilon = sort( unique( mst.Edges.Weight ),'descend' ); % sorted edge weights
+    epsilon = sort( unique( weights ),'descend' ); % sorted edge weights
     epsilon = epsilon(1:dEps:end);
     nEpsilon = numel( epsilon );
 

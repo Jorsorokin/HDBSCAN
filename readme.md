@@ -11,7 +11,14 @@ See the [docs](docs) for interfacing and running HDBSCAN with your own data.
 
 ## Dependencies
 - MATLAB version r2015a or greater
+- Signal processing toolbox
 
 ## References
 - Campello et al. (2013): Density-Based Clustering Based on Hierarchical Density Estimates.
 - Campello et al. (2015): Hierarchical density estimates for data clustering, visualization, and outlier detection  
+
+## Known Issues
+- Prediction of new points is an approximation, as the cluster hierarchy is not modified with new points
+- Hierarchy update with new labels has heuristics in place to deal with new clusters arising from previously labeled outliers
+
+

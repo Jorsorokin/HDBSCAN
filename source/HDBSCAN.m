@@ -31,6 +31,10 @@ classdef HDBSCAN < handle
     % Properties:
     % ----------
     %   data            -   the raw data used for model creation
+    %
+    %   nPoints         -   the number of rows in the matrix "data"
+    %
+    %   nDims           -   the number of columns in the matrix "data"
     %   
     %   minpts          -   the nearest 'minpts' neighbor used for core distance
     %                       calculation for each point in X. Default = 5
@@ -52,6 +56,9 @@ classdef HDBSCAN < handle
     %
     %   bestClusters    -   the optimal clusters discovered from the clusterTree
     %
+    %   clusterMap      -   maps each unique ID in labels to the best
+    %                       cluster it is associated with
+    %
     %   corePoints      -   the most "representative" points of the final
     %                       optimal clusters. These are the densest points
     %                       of any of the clusters, and can be used for
@@ -70,7 +77,7 @@ classdef HDBSCAN < handle
     %
     % Methods:
     % -------
-    %   fit             -   fits a hierarchical model to the data in X
+    %   fit_model       -   fits a hierarchical model to the data in X
     %
     %   predict         -   predicts new data based on the trained model
     %
@@ -82,6 +89,13 @@ classdef HDBSCAN < handle
     %
     %   plot_tree       -   plots the cluster hierarchy, and indicates
     %                       which clusters were kept in the final clustering
+    %
+    %   plot_clusters   -   plots the first 3 (or 2, if 2D) columns of self.data,
+    %                       color coded by the cluster labels of the data points
+    %
+    %   run_hdbscan     -   convenience function that fits a full
+    %                       hierarchical model, finds optimal clusters, and
+    %                       assigns labels to data points
     %
     %       * see individual methods for more details on inputs/outputs
     %
@@ -98,6 +112,7 @@ classdef HDBSCAN < handle
         minclustsize = 5;
         outlierThresh = 0.9;
         bestClusters
+        clusterMap
         corePoints
         coreLambda
         labels
@@ -116,8 +131,8 @@ classdef HDBSCAN < handle
         end
             
         
-        function fit( self,varargin )
-            % fit( self,(dEps,verbose) )
+        function fit_model( self,varargin )
+            % fit_model( self,(dEps,verbose) )
             %
             % fits a full hierarchical cluster model to the data stored in 
             % self.data. Uses "self.minpts" and "self.minclustsize" for
@@ -199,7 +214,7 @@ classdef HDBSCAN < handle
             %   self.coreLambda
             
             % check if model has been trained
-            trained_check( self );
+            self.trained_check();
             tree = self.model.clusterTree;
             
             % get the optimal flat clustering
@@ -233,17 +248,279 @@ classdef HDBSCAN < handle
             
             % compute labels and probability of cluster membership
             [self.labels,self.P] = get_cluster_probability( self.bestClusters,full( self.model.lambdaMax ),self.coreLambda );
-            
-            % set labels with outliser scores > outlierThresh = 0
+            self.clusterMap = unique( self.labels(self.labels>0) )';
+
+            % set labels with outlier scores > outlierThresh = 0
             self.labels( self.score > self.outlierThresh ) = 0;    
+            
+            % update if any clusters are now all zero
+            badclusts = ~ismember( self.clusterMap,unique( self.labels(self.labels>0) ) );
+            self.clusterMap( badclusts ) = [];
+            self.corePoints = self.corePoints( self.clusterMap );
+            self.coreLambda = self.coreLambda( self.clusterMap );
+            self.bestClusters = self.bestClusters( self.clusterMap );
         end
         
         
-        function [newLabels,newProb] = predict( self,newPoints )
-            % [newLabels,newProb] = predict( self,newPoints )
+        function run_hdbscan( self,varargin )
+            % run_hdbscan( self,(minpts,minclustsize,dEps,outlierThresh,plotResults) )
+            %
+            % fits a hierarchical model to self.data and finds the best
+            % flat clustering scheme. Then assigns labels to each data
+            % point in self.data based on the final clusters.
+            %
+            %   Note: this is just a convenience function to avoid manually
+            %         typing the commands to perform these operations
+            %
+            % Inputs:
+            %   minpts - minimum # neighbors for core distances
+            %
+            %   minclustsize - minimum # points in a cluster to keep the
+            %                  cluster
+            %
+            %   dEps - iterator (skips edge weight iteratios every "dEps"
+            %          times)
+            %
+            %   outlierThresh - threshold between [0,1] for outlier scores
+            %
+            %   plotResults - logical to plot the cluster results or not
+            %
+            % Outputs:
+            %   self.model
+            %   self.corePoints
+            %   self.coreLabels
+            %   self.bestClusters
+            %   self.labels
+            %   self.P
+            %   self.score
+            
+            % check inputs
+            if nargin > 1 && ~isempty( varargin{1} )
+                self.minpts = varargin{1};
+            end
+            if nargin > 2 && ~isempty( varargin{2} )
+                self.minclustsize = varargin{2};
+            end
+            if nargin > 3 && ~isempty( varargin{3} )
+                dEps = varargin{3};
+            else
+                dEps = 1;
+            end
+            if nargin > 4 && ~isempty( varargin{4} )
+                self.outlierThresh = varargin{4};
+            end
+            if nargin > 5 && ~isempty( varargin{5} )
+                plotResults = varargin{5};
+            else
+                plotResults = false;
+            end
+            
+            % fit the hierarchical model
+            self.fit_model( dEps );
+            
+            % extract best clusters
+            self.get_best_clusters();
+            
+            % assign labels
+            self.get_membership();
+            
+            % visualize the results
+            if plotResults
+                figure;
+                self.plot_tree();
+                
+                figure;
+                self.plot_clusters();
+                set( gcf,'color','k' )
+            end
+        end
+        
+        
+        function update_hierarchy( self,newLabels )
+            % update_hierarchy( self,newLabels )
+            %
+            % updates the cluster hierarchy and the lambda values associated
+            % with the clusters based on any new label vector. This allows
+            % one to manually alter the clusters while maintaining a
+            % probabilistic model that can be used to predict new points
+            %
+            % Inputs:
+            %   newLabels - self.nPoints x 1 vector of new labels
+            %
+            % Outputs:
+            %   updates all properties pertaining to the cluster hierarchy
+            %   in "self"
+            
+            % check for model / best clusters
+            self.trained_check();
+            self.best_cluster_check();
+            
+            % get the necessary variables that will be updated
+            lambdaMax = full( self.model.lambdaMax );
+            lambdaNoise = self.model.lambdaNoise;
+            bestClusts = self.bestClusters;
+            map = self.clusterMap;
+            parents = self.model.clusterTree.parents;
+            clusters = self.model.clusterTree.clusters;
+            minLambda = self.model.clusterTree.lambdaMin;
+            stability = self.model.clusterTree.stability;
+            nClusts = clusters(end);
+            newClusters = [];
+            
+            % find changed labels
+            oldLabels = self.labels;
+            changedPts = (oldLabels ~= newLabels);
+            changedLabels = unique( newLabels(changedPts) )';
+            changedLabels(changedLabels == 0) = [];
+
+            % loop over the changed clusters, and update the model 
+            % depending on whether the new cluster is a result 
+            % of a split or merge
+            for k = changedLabels
+                pts = find( (changedPts & newLabels == k) ); % intersection{ C_k, C_i }
+                prevID = unique( oldLabels(pts) );
+                prevClust = bestClusts( ismember( map(~ismember(bestClusts,newClusters)),prevID ) );
+                thisClust = bestClusts( map == k );
+                
+                switch numel( prevClust )
+                    case 0 % previous points were just noise
+                        
+                        % update lambdas of points by using the lambdas at
+                        % which they become noise
+                        nClusts = nClusts + 1;
+                        newLambda = lambdaNoise(pts);
+                        lambdaMax(:,nClusts) = 0;
+                        lambdaMax(pts,nClusts) = newLambda;
+                        
+                        % update cluster stability/lambda by taking the
+                        % mean of the parent clusters
+                        clusters(nClusts) = nClusts;
+                        parents(nClusts) = round( mean( self.model.lastClust(pts) ) ); % this is a hack
+                        minLambda(nClusts) = minLambda(parents(nClusts));
+                        stability(nClusts) = stability(parents(nClusts));
+                        bestClusts(end+1) = nClusts;
+                        map(end+1) = k;
+                        newClusters(end+1) = nClusts;
+                                  
+                    case 1 && ~any( oldLabels == k ) % split 
+                        
+                        % update the lambdas of the new clusters by simply
+                        % moving lambdas associated with appropraite points
+                        nClusts = nClusts + 1;
+                        newLambda = lambdaMax(pts,prevClust);
+                        lambdaMax(pts,prevClust) = 0;
+                        lambdaMax(:,nClusts) = 0;
+                        lambdaMax(pts,nClusts) = newLambda;
+                        
+                        % update cluster minimum lambda by just copying
+                        % from previous one
+                        minLambda(nClusts) = minLambda(prevClust); % just take a copy
+                        stability(nClusts) = stability(prevClust); % ditto
+                        
+                        % update the clusters and parents vectors
+                        clusters(nClusts) = nClusts;
+                        parents(nClusts) = prevClust;
+                        bestClusts(end+1) = nClusts;
+                        map(end+1) = k;
+                        newClusters(end+1) = nClusts;
+                        
+                    otherwise % merge
+                        
+                        % check if the current cluster is a new cluster,
+                        % resulting from a merge that produced an entirely
+                        % new ID, rather than merging with a previous ID
+                        if isempty( thisClust )
+                            nClusts = nClusts + 1;
+                            bestClusts(end+1) = nClusts;
+                            map(end+1) = k;
+                            newClusters(end+1) = nClusts;
+                            thisClust = nClusts;
+                            lambdaMax(:,thisClust) = 0;
+                            minLambda(thisClust) = 0;
+                            stability(thisClust) = 0;
+                        end
+                        
+                        for j = 1:numel( prevID )
+                            
+                            % update the lambdas
+                            oldpts = (oldLabels == prevID(j));
+                            ptFrac = nnz( oldpts ) / numel( pts );
+                            switch prevID(j) 
+                                case 0 % just noise
+                                    oldCluster = mode( self.model.lastClust(oldpts) );
+                                    oldLambda = lambdaNoise(oldpts);
+                                    
+                                otherwise % prev cluster used
+                                    oldCluster = bestClusts(map == prevID(j) & ~ismember( bestClusts,newClusters ));
+                                    oldLambda = lambdaMax(oldpts,oldCluster);
+                                    lambdaMax(oldpts,oldCluster) = 0;
+                            end
+                            
+                            lambdaMax(oldpts,thisClust) = oldLambda;
+                            
+                            % remove parents/clusters and associated
+                            % stabilities from old clusters ONLY IF 
+                        	% no points remain in the previous clusters 
+                            % AND the cluster to remove was not just added
+                            if ~any( ~changedPts & oldpts ) && (prevID(j) ~= 0)
+                                removeInds = (bestClusts == oldCluster);
+                                map(removeInds) = [];
+                                bestClusts(removeInds) = [];
+                            end
+                            
+                            % update the minLambda and stability vectors
+                            % by taking a weighted average, determined by
+                            % the fraction of points merged from cluster j
+                            minLambda(thisClust) = (minLambda(thisClust) + ptFrac*minLambda(oldCluster)) / 2;
+                            stability(thisClust) = (stability(thisClust) + ptFrac*stability(oldCluster)) / 2;
+                        end 
+                end
+            end
+                        
+            % eliminate old clusters that are now just noise or eliminated
+            badClusts = ~ismember( map,unique( newLabels(newLabels>0) ) );
+            bestClusts(badClusts) = [];
+            map(badClusts) = [];
+            
+            % now find the core points and core lambda for the clusters
+            [self.corePoints,self.coreLambda] = get_core_points( parents,bestClusts,lambdaMax );
+
+            % store the updated parameters
+            self.bestClusters = bestClusts;
+            self.clusterMap = map';
+            self.model.lambdaMax = sparse( lambdaMax );
+            self.model.clusterTree.clusters = clusters;
+            self.model.clusterTree.parents = parents;
+            self.model.clusterTree.stability = stability;
+            self.model.clusterTree.lambdaMin = minLambda;
+            
+            % update the labels
+            self.labels = newLabels;
+        end
+        
+        
+        function [newLabels,newProb,newScore,outliers] = predict( self,newPoints )
+            % [newLabels,newProb,newScore,outliers] = predict( self,newPoints )
             %
             % predicts cluster membership to new points given the trained
-            % hierarchical cluster model 
+            % hierarchical cluster model.
+            %
+            % For each point i, prediction is performed as follows:
+            %   (a) set D(i,j) = euclidean distance of the jth nearest
+            %       neighbor with label > 0, for j in [1, self.minpts*2]
+            %
+            %   (b) set R(i) = nearest self.minpts mutual-reachability 
+            %       distance among the self.minpts*2 nearest neighbors.
+            %       
+            %   (c) assign label(i) = label of the nearest mutual-reachable
+            %       neighbor of point i
+            %   
+            %   (d) set L(i) = lambda value for point i as 1 / R(i)
+            %
+            %   (e) P(i) = L(i) / L_max; L_max = maximum lambda of the
+            %       cluster assigned to point i
+            %
+            %   (f) flag outlier(i) IF 1-P(i) > self.outlierThresh
             
             % check trained and best cluster assignment
             self.trained_check()
@@ -273,41 +550,37 @@ classdef HDBSCAN < handle
                 d(d < coreDist(i)) = coreDist(i);
                 idx = D(i,:) > d;
                 d(idx) = D(i,idx);
+                
                 [newLambda(i),nn] = min( d ); % the minimum mutual reach is the closest object
                 newLabels(i) = self.labels(inds(i,nn));
             end
-            newLambda = 1./newLambda;
             clear D inds
+
+            % convert the mutual reaches to lambda values
+            newLambda = 1./newLambda;
             
             % now that we have the lambda values, we can check if any of
             % the new points are outliers, by comparing their lambda values
             % with the minimum lambda value of the clusters they are
-            % assigned to. Outliers should have lambda values that are
-            % smaller than the minimum lambda value of any point belonging
-            % to a certain cluster. 
-            %
-            % This relates to the largest "weight" in the
-            % original minimum spanning tree that a point can have 
-            % while still being associated with that cluster
+            % assigned to. This relates to the largest "weight" in the
+            % original hierarchical tree that a point can have 
+            % while still being associated with its particular cluster
             uniqueLabels = unique( newLabels(newLabels>0) )';
-            maxLambda = full( self.model.lambdaMax );
             newProb = zeros( size( newLabels ) );
             lambdaCore = self.coreLambda;
+            map = self.clusterMap;
+
+            % compare the lambda values to the max lambda of this
+            % cluster (the core points) to get the probability of
+            % belonging to this cluster
             for k = uniqueLabels
-                
-                % find all points in this cluster
-                inliers = self.labels == k;
-                minLambda = min( maxLambda(inliers,k) ); % minimum lambda associated with this cluster
-                
-                % compare minimum lambda and check if any outliers
                 thesePts = (newLabels == k);
-                newLabels(thesePts & newLambda < minLambda) = 0;
-                
-                % compare the lambda values to the max lambda of this
-                % cluster (the core points) to get the probability of
-                % belonging to this cluster
-                newProb(thesePts) = newLambda(thesePts) ./ max( lambdaCore(k),newLambda(thesePts) );
+                newProb(thesePts) = newLambda(thesePts) ./ max( lambdaCore(map == k),newLambda(thesePts) );
             end
+            
+            % outlier if 1 - probability is > outlier threshold
+            newScore = 1 - newProb;
+            outliers = find( newScore > self.outlierThresh );
         end
 
         
@@ -327,7 +600,8 @@ classdef HDBSCAN < handle
             h.LineStyle = '--';
             h.EdgeColor = 'k';
             h.NodeLabel = repmat( {''},1,nclusts );
-            set( gca,'tickdir','out','box','off' );
+            set( gca,'tickdir','out','box','off','XTick',[],'XTickLabel',[] );
+            title( 'Condensed cluster tree' );
 
             % highlight kept clusters
             if ~isempty( self.bestClusters )
@@ -337,19 +611,31 @@ classdef HDBSCAN < handle
         end
         
         
-        function h = plot_clusters( self )
-            % h = plot_clusters( self )
+        function h = plot_clusters( self,varargin )
+            % h = plot_clusters( self,(dims) )
             %
             % plots the clusters, color-coded by the labels,
             % defaulting to the first 3 columns of self.data
             %
+            % Inputs:
+            %   (dims) - up to 3 dimensions (columns) of self.data to plot.
+            %            Must specify self.nDims different dims to plot
+            %
             % Outputs:
             %   h - handle to scatter plot
             
-            if self.nDims >= 3
-                h = scatter3( self.data(:,1),self.data(:,2),self.data(:,3),'.' );
+            if nargin > 1 && ~isempty( varargin{1} )
+                dims = varargin{1};
+                dims = dims(1:min( self.nDims,3 ));
             else
-                h = scatter( self.data(:,1),self.data(:,2),'.' );
+                dims = 1:self.nDims;
+            end
+            
+            % scatter plots
+            if self.nDims >= 3
+                h = scatter3( self.data(:,dims(1)),self.data(:,dims(2)),self.data(:,dims(3)),'.' );
+            else
+                h = scatter( self.data(:,dims(1)),self.data(:,dims(2)),'.' );
             end
             
             % change colors according to self.labels
@@ -359,6 +645,7 @@ classdef HDBSCAN < handle
             end
             
             % change appearance
+            title( 'Clustered data','color','w' );
             set( h.Parent,'tickdir','out','box','off','color','k','xcolor','w','ycolor','w' );
         end
 
@@ -371,7 +658,7 @@ classdef HDBSCAN < handle
         function trained_check( self )
             % returns an error if self.trained is false
             
-            assert( isempty( self.model ),'Must train hierarchical model first!' );
+            assert( ~isempty( self.model ),'Must train hierarchical model first!' );
         end
         
         function best_cluster_check( self )
@@ -406,7 +693,7 @@ classdef HDBSCAN < handle
                  [0.2, 0.2, 0.6];...    % dark blue         (20)
                 ];
 
-            repeats = max( 1,round( (max( self.labels )-20)/20 ) );
+            repeats = max( 1,ceil( max( self.labels )/19 ) );
             colors = [plotColor(1,:);repmat( plotColor(2:end,:),repeats,1 )];
         end
         
@@ -414,7 +701,7 @@ classdef HDBSCAN < handle
             % creates a kdtree object based on self.data. Used for fast
             % nearest-neighbor queries for new points
             
-            self.kdtree = createns( self.data,'nsmethod','kdtree' );
+            self.kdtree = createns( self.data(self.labels>0,:),'nsmethod','kdtree' );
         end
         
     end
