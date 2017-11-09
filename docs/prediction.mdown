@@ -1,0 +1,18 @@
+# Out of sample prediction
+
+One of the most critical features of any clustering algorithm is the ability to apply the clustering model to a set of new points in a probabilistic way. That is, given a new set of points not used for the training procedure, we would like to predict the probabilistic cluster assignments of the new points, which includes assigning new points as outliers as necessary. The cluster hierarchy created by the HDBSCAN training procedure has the information necessary to do just this. Cluster assignments are predicted for new points by comparing each new data point to the "core points" of each cluster in the hierarchy. 
+
+What exactly is a core point? Well, for a perfectly multivariate gaussian-distributed cluster, the core point would be just the point nearest to the mean of all points in that cluster. Another way to think about this is that a core point is a point that is the "densest" for a given cluster, or one that persists within the cluster the longest as the lambda threshold (see the role of lambda from the HDBSCAN documention) is increased. In fact, other clustering algorithms such as K-means, which assume multivariate gaussian distributions, assign labels to points by comparing the distance between points and the means of the clusters at each iteration. However, this completely fails when the clusters are NOT gaussian-distributed. HDBSCAN provides a solution to this problem by labeling any points that persist the longest in a cluster as core points. That is, any points that persisted in a cluster prior to the iteration at which the cluster completely disappears are considered core points. This allows elongated clusters, for instance, to have multiple "cores" that span the cluster and capture its shape. 
+
+New points are then assigned to clusters based on their nearest mutual-distance to any of the training points. At this stage, the prediction is purely a "hard" clustering, in that the label assignments have no probabilities attached to them. This is where the core points come into play. After cluster assignment, the probability of a new point belonging to its assigned cluster is calculated by comparing the core distance of the new point to the core distance of the core points of that cluster. This is easily done by taking the ratio of CoreDist_j / CoreDist_i, for a new point i and core point j. Intuitively, smaller the core distance of the new point, the more it "belongs" to that cluster. Since core points are the densest points of any cluster, the ratio usually doesn't exceed 1, and when it does, we clamp the maximum value to 1, which indicates 100% probability of belonging to that cluster.
+
+``` matlab
+% first, lets fit an HDBSCAN model to our training data X
+clusterer = HDBSCAN( X );
+clusterer.run_hdbscan(); % just using defaults for this example
+
+% Assume our new data is in the matrix Y, with the same number of columns as the training data
+[newLabels,probability] = hdbscan.predict( Y );
+```
+
+And that's it! The nice thing about predicting directly from the HDBSCAN interface is that new points can also be assigned as outliers, if `1 - probability > clusterer.outlierThresh`, a convenient equation that uses the original clusterer's outlierThreshold for new points. 
