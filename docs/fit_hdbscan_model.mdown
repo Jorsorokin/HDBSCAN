@@ -8,7 +8,7 @@ clusterer = HDBSCAN( X );
 
 % we can view our data matrix size
 fprintf( 'Number of points: %i',clusterer.nPoints );
-disp( 'Number of dimensions: %i',clusterer.nDims );
+fprintf( 'Number of dimensions: %i',clusterer.nDims );
 ```
 
 now that we've created an instance of the HDBSCAN cluster object, we can fit a cluster hierarchy to X. The clusterer is automatically created with default parameters `self.minpts`, `self.minclustsize`, and `self.outlierThresh`. These parameters control the following:
@@ -16,7 +16,7 @@ now that we've created an instance of the HDBSCAN cluster object, we can fit a c
 `minclustsize`: a smoothing parameter that limits the minimium size of any potential cluster. The larger the *minclustsize* when training, the fewer but potentially larger clusters there will be. This helps eliminate "spurious" clusters produced by the splitting of outliers. 
 `outlierThresh`: a value between 0 and 1 used to evaluate each point as a potential outlier. A value of 0 would result in all points assigned as outliers, while a value of 1 would result in no points assigned as outliers. 
 
-We can set these parameters as follows:
+We can set these parameters and run the clustering as follows:
 ``` matlab
 % (1) directly set the parameters
 clusterer.minpts = 10;
