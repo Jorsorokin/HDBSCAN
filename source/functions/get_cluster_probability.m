@@ -22,7 +22,7 @@ function [labels,P] = get_cluster_probability( clusters,lambdaMax,coreLambda )
 
     n = size( lambdaMax,1 );
     P = zeros( n,1 );
-    labels = zeros( n,1,'int8' );
+    labels = zeros( n,1,'uint8' );
     
     % loop over clusters
     for k = 1:numel( clusters )

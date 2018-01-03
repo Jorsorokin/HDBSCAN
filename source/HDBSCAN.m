@@ -543,7 +543,7 @@ classdef HDBSCAN < handle
             % for each point, find the nearest mutual-reachable neighbor
             % among the querried raw-distance nearest neighbors
             newLambda = zeros( n,1 );
-            newLabels = zeros( n,1,'int8' );
+            newLabels = zeros( n,1,'uint8' );
             allCoreDist = self.model.dCore';
             for i = 1:size( newPoints,1 )
                 d = allCoreDist(inds(i,:));

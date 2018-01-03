@@ -7,6 +7,8 @@ This MATLAB implementation of the HDBSCAN algorithm was created with peformance 
 
 See the [docs](docs) for interfacing and running HDBSCAN with your own data.
 
+You are free to use/distribute the code, but please keep a reference to this original code base and author (Jordan Sorokin). 
+
 ## Dependencies
 - MATLAB version r2015a or greater
 - Signal processing toolbox

@@ -107,7 +107,7 @@ function model = hdbscan_fit( X,varargin )
     lambdaMax = zeros( n,maxClustNum );     % keeps track of min Eps for point X(i) still in cluster C(j)
     currentMaxID = 1;                       % keeps track of max ID for updating labels of new components
     lambdaMin(1) = 1./epsilon(1);
-    newID = ones( n,1,'int8' );
+    newID = ones( n,1,'uint8' );
 
     %% HIERARCHICAL SEARCH
     for i = 2:nEpsilon
