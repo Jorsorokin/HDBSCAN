@@ -17,6 +17,9 @@ function model = hdbscan_fit( X,varargin )
     %   (minclustsize) - minimum number of points for a cluster to be considered a true cluster
     %                    (default = minpts)
     %
+    %   (minClustNum) - the minimum # of clusters; the first minClustNum
+    %                   parent clusters will have stabilities set to 0
+    %                   (default = 1)
     %
     %   (dEps) - positive int used for determining the number of epsilon
     %            (edge weights) to loop over as:
@@ -75,6 +78,7 @@ function model = hdbscan_fit( X,varargin )
     minpts = p.minpts;
     dEps = p.dEps;
     maxClustNum = 1000;
+    minClustNum = p.minClustNum;
     clear p d
 
     %% CREATE CONENCTED TREE
@@ -107,15 +111,14 @@ function model = hdbscan_fit( X,varargin )
     lambdaMax = zeros( n,maxClustNum );     % keeps track of min Eps for point X(i) still in cluster C(j)
     currentMaxID = 1;                       % keeps track of max ID for updating labels of new components
     lambdaMin(1) = 1./epsilon(1);
-    newID = ones( n,1,'uint8' );
-
+    newID = ones( n,1,'uint8' );       
+    
     %% HIERARCHICAL SEARCH
     for i = 2:nEpsilon
         
         oldID = newID;
         
         % (e) find edges greater than current epsilon value
-        %idx = find( mst.Edges.Weight > thisEps );
         idx = weights > epsilon(i);
         if ~any( idx )
             continue
@@ -128,7 +131,6 @@ function model = hdbscan_fit( X,varargin )
         weights(idx) = []; 
         mst = mst.rmedge( endNodes(:,1),endNodes(:,2) );
 
-        
         % remove noise
         selfCut = (endNodes(:,1) == endNodes(:,2));
         if any( selfCut )
@@ -210,18 +212,26 @@ function model = hdbscan_fit( X,varargin )
     % (k) compute stabilities
     inClust = ones( n,currentMaxID );
     inClust(lambdaMax == 0) = 0; 
-    S = sum( lambdaMax - bsxfun( @times,lambdaMin,inClust ) ); % [EQ 3] ... cluster stability
-    clusterTree = struct( 'clusters',1:currentMaxID,'parents',parentClust,...
-        'lambdaMin',lambdaMin,'stability',S );    
+    S = sum( lambdaMax - bsxfun( @times,lambdaMin,inClust ) ); % [EQ 3] ... cluster stability    
+    
+    % set 1:minClustNum-1 parent clust stabilities to 0
+    if minClustNum > 1
+        uniqueParents = unique( parentClust(parentClust>0) );
+        removeParents = uniqueParents <= minClustNum;
+        S(uniqueParents(removeParents)) = 0;
+    end
     
     % Model output
+    clusterTree = struct( 'clusters',1:currentMaxID,'parents',parentClust,...
+        'lambdaMin',lambdaMin,'stability',S ); 
+    
     model = struct( 'lambda',1./epsilon(1:i),'clusterTree',clusterTree,'dCore',dCore,...
                     'lambdaNoise',1./lambdaNoise,'lastClust',lastClust,'lambdaMax',sparse( lambdaMax ) );
 
     %% FUNCTIONS
     function p = check_inputs( inputs )
-        names = {'minpts','minclustsize','dEps'};
-        defaults = {5,nan,1};
+        names = {'minpts','minclustsize','minClustNum','dEps'};
+        defaults = {5,nan,1,1};
 
         p = inputParser;
         for j = 1:numel( names )

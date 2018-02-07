@@ -110,6 +110,7 @@ classdef HDBSCAN < handle
         data
         minpts = 5;
         minclustsize = 5;
+        minClustNum = 1;
         outlierThresh = 0.9;
         bestClusters
         clusterMap
@@ -183,6 +184,7 @@ classdef HDBSCAN < handle
                 fprintf( '\t\t%i points x %i dimensions\n\n',self.nPoints,self.nDims );
                 fprintf( '\tMin # neighbors: %i\n',self.minpts );
                 fprintf( '\tMin cluster size: %i\n',self.minclustsize );
+                fprintf( '\tMin # of clusters: %i\n',self.minClustNum );
                 fprintf( '\tSkipping every %i iteration\n\n',dEps-1 );
                 start = clock;
             end
@@ -191,6 +193,7 @@ classdef HDBSCAN < handle
             self.model = hdbscan_fit( self.data,...
                                 'minpts',self.minpts,...
                                 'minclustsize',self.minclustsize,...
+                                'minClustNum',self.minClustNum,...
                                 'dEps',dEps );
             
             % report time to fit the model               
@@ -263,7 +266,7 @@ classdef HDBSCAN < handle
         
         
         function run_hdbscan( self,varargin )
-            % run_hdbscan( self,(minpts,minclustsize,dEps,outlierThresh,plotResults) )
+            % run_hdbscan( self,(minpts,minclustsize,minClustNum,dEps,outlierThresh,plotResults) )
             %
             % fits a hierarchical model to self.data and finds the best
             % flat clustering scheme. Then assigns labels to each data
@@ -302,15 +305,20 @@ classdef HDBSCAN < handle
                 self.minclustsize = varargin{2};
             end
             if nargin > 3 && ~isempty( varargin{3} )
-                dEps = varargin{3};
+                self.minClustNum = varargin{3};
+            else
+                self.minClustNum = 1;
+            end
+            if nargin > 4 && ~isempty( varargin{4} )
+                dEps = varargin{4};
             else
                 dEps = 1;
             end
-            if nargin > 4 && ~isempty( varargin{4} )
-                self.outlierThresh = varargin{4};
-            end
             if nargin > 5 && ~isempty( varargin{5} )
-                plotResults = varargin{5};
+                self.outlierThresh = varargin{5};
+            end
+            if nargin > 6 && ~isempty( varargin{6} )
+                plotResults = varargin{6};
             else
                 plotResults = false;
             end
