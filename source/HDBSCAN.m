@@ -42,6 +42,8 @@ classdef HDBSCAN < handle
     %   minclustsize    -   the minimum # of points necessary for a cluster
     %                       to be deemed valid. Default = 5
     %
+    %   minClustNum     -   the minimum # of clusters to be realized. Default = 1
+    %
     %   outlierThresh   -   a cutoff value between [0,1], where any X(i) with an outlier score 
     %                       (see below) greather than 'outlierThresh' is assigned
     %                       as an outlier (ID = 0). Default = 0.9
