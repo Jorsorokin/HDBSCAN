@@ -216,9 +216,18 @@ function model = hdbscan_fit( X,varargin )
     
     % set 1:minClustNum-1 parent clust stabilities to 0
     if minClustNum > 1
-        uniqueParents = unique( parentClust(parentClust>0) );
-        removeParents = uniqueParents <= minClustNum;
-        S(uniqueParents(removeParents)) = 0;
+        [uniqueParents,parentLocation] = unique( parentClust(parentClust>0) );
+        [~,idx] = sort( parentLocation );
+        uniqueParents = uniqueParents( idx ); % order in which the parents were split
+        nchildren = zeros( 1,numel( uniqueParents ) );
+        for i = 1:numel( uniqueParents )
+            nchildren(i) = nnz( parentClust == uniqueParents(i) );
+        end
+        
+        % set stabilities for the first stability-ordered N parents that, cumulatively, have
+        % minClustNum # of children equal to 0 
+        removeParents = uniqueParents( 1:find( cumsum( nchildren ) >= minClustNum,1 ) );
+        S(removeParents) = 0;
     end
     
     % Model output

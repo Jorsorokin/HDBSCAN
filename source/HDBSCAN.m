@@ -507,8 +507,8 @@ classdef HDBSCAN < handle
         end
         
         
-        function [newLabels,newProb,newScore,outliers] = predict( self,newPoints )
-            % [newLabels,newProb,newScore,outliers] = predict( self,newPoints )
+        function [newLabels,newProb,outliers] = predict( self,newPoints )
+            % [newLabels,newProb,outliers] = predict( self,newPoints )
             %
             % predicts cluster membership to new points given the trained
             % hierarchical cluster model.
@@ -543,27 +543,42 @@ classdef HDBSCAN < handle
                 self.create_kdtree();
             end
             
-            % compute the nearest neighbors of the new points and the
-            % corresponding core distance of the new points
-            [inds,D] = self.kdtree.knnsearch( newPoints,'K',self.minpts*2 );
-            coreDist = D(:,self.minpts);
+            % --- OLD CODE (using knn for labeling rather than cores) ---
             
-            % for each point, find the nearest mutual-reachable neighbor
-            % among the querried raw-distance nearest neighbors
-            newLambda = zeros( n,1 );
-            newLabels = zeros( n,1,'uint8' );
-            allCoreDist = self.model.dCore';
-            for i = 1:size( newPoints,1 )
-                d = allCoreDist(inds(i,:));
-                d(d < coreDist(i)) = coreDist(i);
-                idx = D(i,:) > d;
-                d(idx) = D(i,idx);
-                
-                [newLambda(i),nn] = min( d ); % the minimum mutual reach is the closest object
-                newLabels(i) = self.labels(inds(i,nn));
-            end
-            clear D inds
+%             % compute the nearest neighbors of the new points and the
+%             % corresponding core distance of the new points
+%             [inds,D] = self.kdtree.knnsearch( newPoints,'K',self.minpts*2 );
+%             coreDist = D(:,self.minpts);            
+%             newLabels = zeros( n,nCores,'uint8' );
+%             allCoreDist = self.model.dCore;
+%             newLambda = zeros( n,nCores );
+%             for i = 1:size( newPoints,1 )
+%                 d = allCoreDist(inds(i,:));
+%                 d(d < coreDist(i)) = coreDist(i);
+%                 idx = D(i,:) > d;
+%                 d(idx) = D(i,idx);
+%                 
+%                 [newLambda(i),nn] = min( d ); % the minimum mutual reach is the closest object
+%                 newLabels(i) = self.labels(inds(i,nn));
+%                 d = cellfun( @mean, cellfun( @(x)(compute_pairwise_dist(self.data(x,:),newPoints(i,:))),self.corePoints,'un',0 ) );
+%                 [newLambda(i),newLabels(i)] = min( d );
+%             end
+%             clear D inds
 
+            % --- END OLD CODE ---
+
+            % for each point, find the nearest core points 
+            nCores = numel( self.corePoints );
+            D = zeros( n,nCores ); 
+            for i = 1:nCores
+                points = self.data( self.corePoints{i},: );
+                d = compute_pairwise_dist( newPoints,points );
+                D(:,i) = mean( d,2 );
+            end
+            
+            [newLambda,newLabels] = min( D,[],2 );
+            newLabels = uint8( newLabels );
+            
             % convert the mutual reaches to lambda values
             newLambda = 1./newLambda;
             
