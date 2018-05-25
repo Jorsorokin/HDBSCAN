@@ -82,36 +82,38 @@ function model = hdbscan_fit( X,varargin )
     clear p d
 
     %% CREATE CONENCTED TREE
-    % (a) compute the core distances & mutual reachability for each X(i)
+    % (a) compute the core distances & mutual reachability for each X(i)    
     [dCore,D] = compute_core_distances( X,minpts );
     if isscalar( D )
         mr = mutual_reachability( X,dCore );
     else
         mr = mutual_reachability( D,dCore );
-        clear D
     end
+    clear D X
     
     % (b) create the minimum spanning tree and add self loops
-    method = 'dense'; type = 'tree';
-    mst = minspantree( graph( mr ),'Method',method,'Type',type ); 
-    mst.addedge( 1:n,1:n,dCore );
-    nodes = mst.Edges.EndNodes;
-    weights = mst.Edges.Weight;
+    [nodes(:,1),nodes(:,2),weights] = mst_prim( mr ); clear mr
+    if ~isa( weights(1),'double' ) || ~isa( weights(1),'logical' )
+        weights = double( weights );
+        nodes = double( nodes );
+    end
+    nodes = [nodes;[1:n;1:n]']; weights = [weights;dCore']; % adds self loops
+    mst = sparse( [nodes(:,1);nodes(:,2)],[nodes(:,2);nodes(:,1)],[weights;weights],n,n ); % makes it symmetric
     
     % (c) get sorted weight vector for the loop
-    epsilon = sort( unique( weights ),'descend' ); % sorted edge weights
+    epsilon = single( sort( unique( weights ),'descend' ) ); % sorted edge weights (larger = further apart)
     epsilon = epsilon(1:dEps:end);
     nEpsilon = numel( epsilon );
 
     % (d) pre-allocate our matrices for storage  
-    lambdaNoise = zeros( n,1 );             % keeps track of epsilon when X(i) becomes noise
-    lastClust = zeros( n,1 );               % keepst rack of C(j) when X(i) becomes noise
-    parentClust = zeros( 1,maxClustNum );   % keeps track of which parent spawned each cluster
-    lambdaMin = zeros( 1,maxClustNum );     % keeps track of max Eps for clust C(j) to appear
-    lambdaMax = zeros( n,maxClustNum );     % keeps track of min Eps for point X(i) still in cluster C(j)
-    currentMaxID = 1;                       % keeps track of max ID for updating labels of new components
+    lambdaNoise = zeros( n,1,'single' );            % keeps track of epsilon when X(i) becomes noise
+    lastClust = zeros( n,1,'uint32' );              % keepst track of C(j) when X(i) becomes noise
+    parentClust = zeros( 1,maxClustNum,'uint32' );  % keeps track of which parent spawned each cluster
+    lambdaMin = zeros( 1,maxClustNum,'single' );    % keeps track of max Eps for clust C(j) to appear
+    lambdaMax = zeros( n,maxClustNum,'single' );    % keeps track of min Eps for point X(i) still in cluster C(j)
+    currentMaxID = uint32( 1 );                     % keeps track of max ID for updating labels of new components
     lambdaMin(1) = 1./epsilon(1);
-    newID = ones( n,1,'uint8' );       
+    newID = ones( n,1,'uint32' );       
     
     %% HIERARCHICAL SEARCH
     for i = 2:nEpsilon
@@ -128,9 +130,12 @@ function model = hdbscan_fit( X,varargin )
         % remove bad ones (those previously labeled as noise)
         endNodes = nodes(idx,:);
         nodes(idx,:) = [];
-        weights(idx) = []; 
-        mst = mst.rmedge( endNodes(:,1),endNodes(:,2) );
-
+        weights(idx) = [];
+        for q = 1:nnz( idx )
+            mst(endNodes(q,1),endNodes(q,2)) = 0; % cut the edges
+            mst(endNodes(q,2),endNodes(q,1)) = 0;
+        end
+        
         % remove noise
         selfCut = (endNodes(:,1) == endNodes(:,2));
         if any( selfCut )
@@ -162,31 +167,22 @@ function model = hdbscan_fit( X,varargin )
             % (h) get the connected components from the end nodes
             parent = oldID(endNodes(k,1));
             
-            subTree = bfsearch( mst,endNodes(k,1) );
-            subTree2 = bfsearch( mst,endNodes(k,2) );
-            nTree1 = length( subTree );
-            nTree2 = length( subTree2 );
-            validTree = [nTree1,nTree2] >= minclustsize;            
+            [~,~,temp1] = bfs( mst,endNodes(k,1) );
+            [~,~,temp2] = bfs( mst,endNodes(k,2) );
+            subTree1 = temp1 > 0;
+            subTree2 = temp2 > 0;
+            validTree = [nnz( subTree1 ),nnz( subTree2 )] >= minclustsize;            
             
             % (i) check for noise or splits
-            % (i.1) - both vaild
-            if validTree
-                newMax = currentMaxID + 2;
-                temp = newMax - 1;
-                newID(subTree) = temp;
-                newID(subTree2) = newMax; 
-                parentClust(temp:newMax) = parent;
-                currentMaxID = newMax;
-                lambdaMax([subTree;subTree2],parent) = epsilon(i-1);
-                lambdaMin([temp,newMax]) = epsilon(i);
-            else
-                % (i.2) - second is noise
+            % (i.1) - one or both trees are too small
+            if ~all( validTree )
+                
                 if validTree(1)   
                     isNoise = subTree2;
                 elseif validTree(2)
-                    isNoise = subTree;
+                    isNoise = subTree1;
                 else
-                    isNoise = [subTree;subTree2];
+                    isNoise = subTree1 | subTree2;
                 end
                 
                 lastClust(isNoise) = oldID(isNoise);
@@ -196,7 +192,18 @@ function model = hdbscan_fit( X,varargin )
                 
                 if ~any( newID )
                     break
-                end    
+                end 
+                
+            % (i.2) both subtrees valid
+            else
+                newMax = currentMaxID + 2;
+                temp = newMax - 1;
+                newID(subTree1) = temp;
+                newID(subTree2) = newMax; 
+                parentClust(temp:newMax) = parent;
+                currentMaxID = newMax;
+                lambdaMax(subTree1 | subTree2,parent) = epsilon(i-1);
+                lambdaMin([temp,newMax]) = epsilon(i);  
             end
         end
     end
@@ -235,7 +242,7 @@ function model = hdbscan_fit( X,varargin )
         'lambdaMin',lambdaMin,'stability',S ); 
     
     model = struct( 'lambda',1./epsilon(1:i),'clusterTree',clusterTree,'dCore',dCore,...
-                    'lambdaNoise',1./lambdaNoise,'lastClust',lastClust,'lambdaMax',sparse( lambdaMax ) );
+                    'lambdaNoise',1./lambdaNoise,'lastClust',lastClust,'lambdaMax',sparse( double( lambdaMax ) ) );
 
     %% FUNCTIONS
     function p = check_inputs( inputs )

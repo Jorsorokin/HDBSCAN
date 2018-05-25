@@ -364,6 +364,9 @@ classdef HDBSCAN < handle
             % check for model / best clusters
             self.trained_check();
             self.best_cluster_check();
+            if isrow( newLabels )
+                newLabels = newLabels';
+            end
             
             % get the necessary variables that will be updated
             lambdaMax = full( self.model.lambdaMax );
@@ -387,9 +390,9 @@ classdef HDBSCAN < handle
             % depending on whether the new cluster is a result 
             % of a split or merge
             for k = changedLabels
-                pts = find( (changedPts & newLabels == k) ); % intersection{ C_k, C_i }
+                pts = changedPts & (newLabels == k); % intersection{ C_k, C_i }
                 prevID = unique( oldLabels(pts) );
-                prevClust = bestClusts( ismember( map(~ismember(bestClusts,newClusters)),prevID ) );
+                prevClust = bestClusts( ismembc( map(~ismembc(bestClusts,newClusters)),prevID ) );
                 thisClust = bestClusts( map == k );
                 
                 switch numel( prevClust )
@@ -412,7 +415,7 @@ classdef HDBSCAN < handle
                         map(end+1) = k;
                         newClusters(end+1) = nClusts;
                                   
-                    case 1 && ~any( oldLabels == k ) % split 
+                    case 1 && ~any( thisClust ) % split / manual new cluster
                         
                         % update the lambdas of the new clusters by simply
                         % moving lambdas associated with appropraite points
@@ -433,7 +436,7 @@ classdef HDBSCAN < handle
                         bestClusts(end+1) = nClusts;
                         map(end+1) = k;
                         newClusters(end+1) = nClusts;
-                        
+
                     otherwise % merge
                         
                         % check if the current cluster is a new cluster,
@@ -454,7 +457,7 @@ classdef HDBSCAN < handle
                             
                             % update the lambdas
                             oldpts = (oldLabels == prevID(j));
-                            ptFrac = nnz( oldpts ) / numel( pts );
+                            ptFrac = nnz( oldpts ) / nnz( newLabels==k );
                             switch prevID(j) 
                                 case 0 % just noise
                                     oldCluster = mode( self.model.lastClust(oldpts) );
@@ -468,16 +471,6 @@ classdef HDBSCAN < handle
                             
                             lambdaMax(oldpts,thisClust) = oldLambda;
                             
-                            % remove parents/clusters and associated
-                            % stabilities from old clusters ONLY IF 
-                        	% no points remain in the previous clusters 
-                            % AND the cluster to remove was not just added
-                            if ~any( ~changedPts & oldpts ) && (prevID(j) ~= 0)
-                                removeInds = (bestClusts == oldCluster);
-                                map(removeInds) = [];
-                                bestClusts(removeInds) = [];
-                            end
-                            
                             % update the minLambda and stability vectors
                             % by taking a weighted average, determined by
                             % the fraction of points merged from cluster j
@@ -488,7 +481,8 @@ classdef HDBSCAN < handle
             end
                         
             % eliminate old clusters that are now just noise or eliminated
-            badClusts = ~ismember( map,unique( newLabels(newLabels>0) ) );
+            newClusts = unique( newLabels(newLabels > 0) );
+            badClusts = ~ismembc( map,newClusts );
             bestClusts(badClusts) = [];
             map(badClusts) = [];
             
@@ -496,8 +490,12 @@ classdef HDBSCAN < handle
             [self.corePoints,self.coreLambda] = get_core_points( parents,bestClusts,lambdaMax );
 
             % store the updated parameters
+            for i = 1:numel( map )
+                newLabels(newLabels==map(i)) = i;
+                map(i) = i;
+            end
             self.bestClusters = bestClusts;
-            self.clusterMap = map';
+            self.clusterMap = map;
             self.model.lambdaMax = sparse( lambdaMax );
             self.model.clusterTree.clusters = clusters;
             self.model.clusterTree.parents = parents;
