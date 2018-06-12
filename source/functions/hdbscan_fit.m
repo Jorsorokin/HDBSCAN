@@ -84,20 +84,15 @@ function model = hdbscan_fit( X,varargin )
     %% CREATE CONENCTED TREE
     % (a) compute the core distances & mutual reachability for each X(i)    
     [dCore,D] = compute_core_distances( X,minpts );
-    if isscalar( D )
-        mr = mutual_reachability( X,dCore );
-    else
-        mr = mutual_reachability( D,dCore );
-    end
-    clear D X
+    D = mutual_reachability( D,dCore );
     
     % (b) create the minimum spanning tree and add self loops
-    [nodes(:,1),nodes(:,2),weights] = mst_prim( mr ); clear mr
+    [nodes(:,1),nodes(:,2),weights] = mst_prim( D ); clear mr
     if ~isa( weights(1),'double' ) || ~isa( weights(1),'logical' )
         weights = double( weights );
         nodes = double( nodes );
     end
-    nodes = [nodes;[1:n;1:n]']; weights = [weights;dCore']; % adds self loops
+    nodes = [nodes;repmat( (1:n)',1,2 )]; weights = [weights;dCore']; % adds self loops
     mst = sparse( [nodes(:,1);nodes(:,2)],[nodes(:,2);nodes(:,1)],[weights;weights],n,n ); % makes it symmetric
     
     % (c) get sorted weight vector for the loop
