@@ -283,6 +283,8 @@ classdef HDBSCAN < handle
             %   minclustsize - minimum # points in a cluster to keep the
             %                  cluster
             %
+            %   minClustNum - the minimum # of clusters to be discovered. Default = 1
+            %
             %   dEps - iterator (skips edge weight iteratios every "dEps"
             %          times)
             %
@@ -408,7 +410,7 @@ classdef HDBSCAN < handle
                         % update cluster stability/lambda by taking the
                         % mean of the parent clusters
                         clusters(nClusts) = nClusts;
-                        parents(nClusts) = round( mean( self.model.lastClust(pts) ) ); % this is a hack
+                        parents(nClusts) = max( round( mean( self.model.lastClust(pts) ) ),1 ); % this is a hack
                         minLambda(nClusts) = minLambda(parents(nClusts));
                         stability(nClusts) = stability(parents(nClusts));
                         bestClusts(end+1) = nClusts;
@@ -460,22 +462,22 @@ classdef HDBSCAN < handle
                             ptFrac = nnz( oldpts ) / nnz( newLabels==k );
                             switch prevID(j) 
                                 case 0 % just noise
-                                    oldCluster = mode( self.model.lastClust(oldpts) );
+                                    %oldCluster = mode( self.model.lastClust(oldpts) );
                                     oldLambda = lambdaNoise(oldpts);
                                     
                                 otherwise % prev cluster used
                                     oldCluster = bestClusts(map == prevID(j) & ~ismember( bestClusts,newClusters ));
                                     oldLambda = lambdaMax(oldpts,oldCluster);
                                     lambdaMax(oldpts,oldCluster) = 0;
+                                    
+                                    % update the minLambda and stability vectors
+                                    % by taking a weighted average, determined by
+                                    % the fraction of points merged from cluster j
+                                    minLambda(thisClust) = (minLambda(thisClust) + ptFrac*minLambda(oldCluster)) / 2;
+                                    stability(thisClust) = (stability(thisClust) + ptFrac*stability(oldCluster)) / 2;
                             end
                             
                             lambdaMax(oldpts,thisClust) = oldLambda;
-                            
-                            % update the minLambda and stability vectors
-                            % by taking a weighted average, determined by
-                            % the fraction of points merged from cluster j
-                            minLambda(thisClust) = (minLambda(thisClust) + ptFrac*minLambda(oldCluster)) / 2;
-                            stability(thisClust) = (stability(thisClust) + ptFrac*stability(oldCluster)) / 2;
                         end 
                 end
             end
@@ -508,7 +510,7 @@ classdef HDBSCAN < handle
         
         
         function [newLabels,newProb,outliers] = predict( self,newPoints )
-            % [newLabels,newProb,outliers] = predict( self,newPoints )
+            % [newLabels,newProb,outliers] = predict( self,newPoints,alpha )
             %
             % predicts cluster membership to new points given the trained
             % hierarchical cluster model.
@@ -542,44 +544,19 @@ classdef HDBSCAN < handle
             if isempty( self.kdtree )
                 self.create_kdtree();
             end
-            
-            % --- OLD CODE (using knn for labeling rather than cores) ---
-            
-%             % compute the nearest neighbors of the new points and the
-%             % corresponding core distance of the new points
-%             [inds,D] = self.kdtree.knnsearch( newPoints,'K',self.minpts*2 );
-%             coreDist = D(:,self.minpts);            
-%             newLabels = zeros( n,nCores,'uint8' );
-%             allCoreDist = self.model.dCore;
-%             newLambda = zeros( n,nCores );
-%             for i = 1:size( newPoints,1 )
-%                 d = allCoreDist(inds(i,:));
-%                 d(d < coreDist(i)) = coreDist(i);
-%                 idx = D(i,:) > d;
-%                 d(idx) = D(i,idx);
-%                 
-%                 [newLambda(i),nn] = min( d ); % the minimum mutual reach is the closest object
-%                 newLabels(i) = self.labels(inds(i,nn));
-%                 d = cellfun( @mean, cellfun( @(x)(compute_pairwise_dist(self.data(x,:),newPoints(i,:))),self.corePoints,'un',0 ) );
-%                 [newLambda(i),newLabels(i)] = min( d );
-%             end
-%             clear D inds
-
-            % --- END OLD CODE ---
 
             % for each point, find the nearest core points 
-            nCores = numel( self.corePoints );
-            D = zeros( n,nCores ); 
-            for i = 1:nCores
+            uID = unique( self.labels(self.labels>0) );
+            nID = numel( uID );
+            D = zeros( n,nID ); 
+            for i = 1:nID
                 points = self.data( self.corePoints{i},: );
                 d = compute_pairwise_dist( newPoints,points );
-                D(:,i) = mean( d,2 );
+                D(:,i) = min( d,[],2 );
             end
             
-            [newLambda,newLabels] = min( D,[],2 );
-            newLabels = uint8( newLabels );
-            
             % convert the mutual reaches to lambda values
+            [newLambda,newLabels] = min( D,[],2 );
             newLambda = 1./newLambda;
             
             % now that we have the lambda values, we can check if any of
@@ -602,8 +579,7 @@ classdef HDBSCAN < handle
             end
             
             % outlier if 1 - probability is > outlier threshold
-            newScore = 1 - newProb;
-            outliers = find( newScore > self.outlierThresh );
+            outliers = find( (1-newProb) > self.outlierThresh );
         end
 
         
