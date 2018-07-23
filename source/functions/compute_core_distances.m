@@ -32,23 +32,20 @@ function [dCore,D,kdtree] = compute_core_distances( X,k )
         return
     end
     
-    if (m >= 10) || (n < 100)
+    %if (m >= 10) || (n < 100)
         kdtree = nan;
-        if n > 15e3
+        if n > 20e3
             [~,dCore,D] = compute_nearest_neighbors( X,X,k-1 ); % slow but memory conservative
         else
             D = compute_pairwise_dist( X );
             dCore = sort( D,1 );
             dCore = dCore(k,:);
         end
-    else
-        kdtree = createns( X,'nsmethod','kdtree' );
-        [neighbors,dCore] = kdtree.knnsearch( X,'k',k );
-        dCore = dCore(:,end);
-        neighbors = neighbors(:,end);
-        D = sparse( reshape( double( neighbors' ),n*k,1),...
-            reshape( repmat( 1:m,k,1 ),n*k,1 ),...
-            reshape( double( distances ),n*k,1 ),...
-            n,n ); 
-    end
+    %else
+%         kdtree = createns( X,'nsmethod','kdtree' );
+%         [neighbors,dCore] = kdtree.knnsearch( X,'k',k );
+%         dCore = dCore(:,end);
+%         neighbors = neighbors(:,end);
+%         D = sparse( double( neighbors ),1:n,dCore,n,n );
+    %end
 end
